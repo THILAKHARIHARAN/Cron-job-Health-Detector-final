@@ -1,0 +1,1984 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cron-Job Observability Engine</title>
+  <style>
+    :root {
+      --bg: #08152b;
+      --panel: rgba(255, 255, 255, 0.05);
+      --panel-strong: rgba(255, 255, 255, 0.12);
+      --accent: #7c5cff;
+      --accent-soft: rgba(124, 92, 255, 0.2);
+      --text: #f3f7ff;
+      --muted: #94a3b8;
+      --success: #3bd88d;
+      --warning: #f3b73b;
+      --danger: #ff5b7f;
+      --border: rgba(255, 255, 255, 0.1);
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    /* Entrance staggered animations */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top left, rgba(124, 92, 255, 0.25), transparent 35%),
+        linear-gradient(160deg, #0b1c40 0%, #08152b 45%, #02060f 100%);
+      color: var(--text);
+      line-height: 1.5;
+      padding-top: 120px; /* space for sticky top bar */
+    }
+
+    .page {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    header {
+      margin-bottom: 24px;
+      animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    .hero {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: 2.2rem;
+      letter-spacing: -0.03em;
+      font-weight: 800;
+    }
+
+    .hero p {
+      margin: 8px 0 0;
+      max-width: 720px;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    /* KPI Grid */
+    .top-kpi {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+      margin-bottom: 24px;
+      animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+    }
+
+    .kpi-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 110px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent-soft);
+    }
+
+    .kpi-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .kpi-card-icon {
+      font-size: 1rem;
+      opacity: 0.8;
+    }
+
+    .kpi-card strong {
+      font-size: 2rem;
+      display: block;
+      color: #fff;
+      font-weight: 800;
+      margin-top: 4px;
+    }
+
+    .kpi-card span.desc {
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-top: 4px;
+    }
+
+    /* Middle Grid: 60% / 40% */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 3fr 2fr;
+      gap: 20px;
+      margin-bottom: 24px;
+      animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 16px 45px rgba(0, 0, 0, 0.2);
+      position: relative;
+    }
+
+    .card-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      gap: 12px;
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 1.15rem;
+      color: #e3ebff;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    /* Timeline Line Chart */
+    .chart-placeholder {
+      position: relative;
+      height: 280px;
+      border-radius: 16px;
+      background: radial-gradient(circle at bottom, rgba(124, 92, 255, 0.08), transparent 70%);
+      border: 1px solid rgba(255, 255, 255, 0.03);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .chart-svg-container {
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-legends {
+      display: flex;
+      gap: 16px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 10px;
+      justify-content: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    /* Schedules List */
+    .schedules-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 280px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .schedules-container::-webkit-scrollbar {
+      width: 6px;
+    }
+    .schedules-container::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .schedules-container::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+    }
+
+    .schedule-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 14px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.2s ease;
+    }
+
+    .schedule-item:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .schedule-details {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-width: 70%;
+    }
+
+    .schedule-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .schedule-info {
+      font-size: 0.75rem;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .schedule-meta {
+      display: flex;
+      gap: 12px;
+      margin-top: 4px;
+      font-size: 0.7rem;
+    }
+
+    .meta-tag {
+      padding: 2px 6px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 4px;
+      color: var(--muted);
+    }
+
+    .meta-tag.status-healthy {
+      color: var(--success);
+      background: rgba(59, 216, 141, 0.1);
+    }
+    .meta-tag.status-warning {
+      color: var(--warning);
+      background: rgba(243, 183, 59, 0.1);
+    }
+    .meta-tag.status-critical {
+      color: var(--danger);
+      background: rgba(255, 91, 127, 0.1);
+    }
+
+    /* Buttons */
+    button,
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      font: inherit;
+      transition: all 0.2s ease;
+    }
+
+    button.primary,
+    .btn.primary {
+      background: linear-gradient(135deg, #7c5cff, #3f76ff);
+      color: #fff;
+      border-radius: 12px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      box-shadow: 0 8px 20px rgba(124, 92, 255, 0.3);
+    }
+
+    button.primary:hover,
+    .btn.primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 25px rgba(124, 92, 255, 0.4);
+    }
+
+    button.secondary,
+    .btn.secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      border-radius: 10px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    button.secondary:hover,
+    .btn.secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+      transform: translateY(-1px);
+    }
+
+    button.execute-btn {
+      background: rgba(59, 216, 141, 0.12);
+      color: var(--success);
+      border: 1px solid rgba(59, 216, 141, 0.25);
+      border-radius: 10px;
+      padding: 6px 16px;
+      font-size: 0.8rem;
+    }
+
+    button.execute-btn:hover {
+      background: rgba(59, 216, 141, 0.2);
+      transform: translateY(-1px);
+    }
+
+    button.audit-btn {
+      background: rgba(124, 92, 255, 0.12);
+      color: #b59eff;
+      border: 1px solid rgba(124, 92, 255, 0.25);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 0.75rem;
+    }
+
+    button.audit-btn:hover {
+      background: rgba(124, 92, 255, 0.2);
+    }
+
+    button.delete-btn {
+      background: rgba(255, 91, 127, 0.08);
+      color: var(--danger);
+      border: 1px solid rgba(255, 91, 127, 0.15);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 0.75rem;
+      margin-left: 8px;
+    }
+
+    button.delete-btn:hover {
+      background: rgba(255, 91, 127, 0.15);
+    }
+
+    #toggle-tone.cautious-active {
+      background: linear-gradient(135deg, var(--warning), var(--danger));
+      color: #fff;
+      border: none;
+      box-shadow: 0 10px 20px rgba(243, 183, 59, 0.3);
+    }
+
+    /* Modals styling */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 10, 24, 0.75);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 1000;
+    }
+
+    .modal-backdrop.active {
+      display: flex;
+    }
+
+    .modal {
+      width: min(580px, 100%);
+      background: #0a1731;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 24px;
+      padding: 28px;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+      animation: modalFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes modalFadeIn {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .modal h3 {
+      margin: 0 0 8px;
+      font-size: 1.4rem;
+      color: #fff;
+      font-weight: 800;
+    }
+
+    .modal p.subtitle {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .modal input,
+    .modal select,
+    .modal textarea {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.04);
+      color: #fff;
+      padding: 12px 14px;
+      font-size: 0.9rem;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.2s ease;
+    }
+
+    .modal input:focus,
+    .modal select:focus,
+    .modal textarea:focus {
+      border-color: var(--accent);
+    }
+
+    select option {
+      background-color: #08152b;
+      color: #fff;
+    }
+
+    .modal-footer {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+
+    /* Logbook Registry Section */
+    .logbook-section {
+      margin-top: 12px;
+      animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
+    }
+
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      margin-top: 16px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.82rem;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.04);
+      padding: 14px 16px;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Badges */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .status-badge.clean {
+      background: rgba(59, 216, 141, 0.12);
+      color: var(--success);
+      border: 1px solid rgba(59, 216, 141, 0.2);
+    }
+
+    .status-badge.failed {
+      background: rgba(255, 91, 127, 0.12);
+      color: var(--danger);
+      border: 1px solid rgba(255, 91, 127, 0.2);
+    }
+
+    /* Sticky control bar at the top */
+    .control-bar {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      height: 92px;
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid #e2e8f0;
+      border-radius: 20px;
+      backdrop-filter: blur(20px);
+      z-index: 900;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+    }
+
+    .control-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .engine-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .engine-status span.indicator {
+      width: 10px;
+      height: 10px;
+      background: var(--success);
+      border-radius: 50%;
+      display: inline-block;
+      box-shadow: 0 0 10px var(--success);
+    }
+
+    /* UTC clock and button style overrides based on screenshot */
+    .btn-mockup {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      height: 38px;
+    }
+
+    .btn-mockup-utc {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #475569;
+      cursor: default;
+    }
+
+    .btn-mockup-about {
+      border: 1px solid #0f8a5f;
+      color: #0f8a5f;
+      background: #ffffff;
+    }
+    .btn-mockup-about:hover {
+      background: #f0fdf4;
+      transform: translateY(-1px);
+    }
+
+    .btn-mockup-tour {
+      border: 1px solid #0052cc;
+      color: #0052cc;
+      background: #ffffff;
+    }
+    .btn-mockup-tour:hover {
+      background: #f0f7ff;
+      transform: translateY(-1px);
+    }
+
+    .btn-mockup-help {
+      border: 1px solid #475569;
+      color: #475569;
+      background: #ffffff;
+    }
+    .btn-mockup-help:hover {
+      background: #f8fafc;
+      transform: translateY(-1px);
+    }
+
+    .btn-mockup-reload {
+      border: 1px solid #cbd5e1;
+      color: #475569;
+      background: #ffffff;
+      padding: 8px 12px;
+    }
+    .btn-mockup-reload:hover {
+      background: #f8fafc;
+      transform: translateY(-1px);
+    }
+
+    .btn-icon {
+      flex-shrink: 0;
+    }
+
+    .btn-control-sre {
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #cbd5e1;
+      color: #475569;
+    }
+
+    .btn-control-sre:hover {
+      background: #f8fafc;
+      transform: translateY(-1px);
+    }
+
+    #simulate-btn {
+      border: 1px solid #3b82f6;
+      color: #3b82f6;
+    }
+    #simulate-btn:hover {
+      background: #eff6ff;
+    }
+
+    #toggle-tone {
+      border: 1px solid #7c5cff;
+      color: #7c5cff;
+    }
+    #toggle-tone:hover {
+      background: #f5f3ff;
+    }
+
+    #prune-btn {
+      border: 1px solid #ef4444;
+      color: #ef4444;
+    }
+    #prune-btn:hover {
+      background: #fef2f2;
+    }
+
+    .control-bar.tour-highlight {
+      background: rgba(255, 255, 255, 0.98) !important;
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 45px var(--accent) !important;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    /* Onboarding Tour styles */
+    #tour-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 10, 24, 0.65);
+      backdrop-filter: blur(6px);
+      z-index: 9999;
+      display: none;
+      transition: opacity 0.3s ease;
+    }
+    #tour-backdrop.active {
+      display: block;
+    }
+    .tour-highlight {
+      position: relative !important;
+      z-index: 10000 !important;
+      box-shadow: 0 0 45px var(--accent) !important;
+      border-color: var(--accent) !important;
+      background: rgba(10, 23, 49, 0.98) !important;
+      pointer-events: none;
+    }
+    #tour-tooltip {
+      position: absolute;
+      z-index: 10001;
+      display: none;
+      width: 320px;
+      background: #0d1e3d;
+      border: 1px solid var(--accent);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 20px rgba(124, 92, 255, 0.3);
+      color: #fff;
+      transition: top 0.3s cubic-bezier(0.16, 1, 0.3, 1), left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #tour-tooltip.no-transition {
+      transition: none !important;
+    }
+    
+    /* Stacking context and dimming rules for guided tour */
+    body.tour-active .tour-highlight-parent {
+      position: relative !important;
+      z-index: 10000 !important;
+    }
+
+    body.tour-active header,
+    body.tour-active .card:not(.tour-highlight),
+    body.tour-active .top-kpi:not(.tour-highlight):not(.tour-highlight-parent),
+    body.tour-active .top-kpi.tour-highlight-parent .kpi-card:not(.tour-highlight),
+    body.tour-active .control-bar:not(.tour-highlight) {
+      opacity: 0.15 !important;
+      filter: blur(6px) !important;
+      pointer-events: none !important;
+    }
+    #tour-tooltip h4 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #b59eff;
+    }
+    #tour-tooltip p {
+      margin: 0 0 16px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .tour-tooltip-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 1024px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+      .top-kpi {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 680px) {
+      body {
+        padding-top: 24px !important;
+      }
+      .top-kpi {
+        grid-template-columns: 1fr;
+      }
+      .control-bar {
+        flex-direction: column;
+        height: auto;
+        padding: 16px;
+        gap: 12px;
+        position: relative;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        margin-top: 24px;
+      }
+    }
+
+    /* About GEN TECHIES Modal Custom Styling */
+    .gentechies-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+    @media (max-width: 480px) {
+      .gentechies-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .gentechies-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 14px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .gentechies-card:hover {
+      background: rgba(15, 138, 95, 0.08);
+      border-color: rgba(15, 138, 95, 0.3);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(15, 138, 95, 0.15);
+    }
+    .gentechies-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0f8a5f, #10b981);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+      box-shadow: 0 4px 10px rgba(15, 138, 95, 0.25);
+      flex-shrink: 0;
+    }
+    .gentechies-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .gentechies-name {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    .gentechies-role {
+      font-size: 0.7rem;
+      color: #3bd88d;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <header>
+      <div class="hero">
+        <div>
+          <span class="badge" style="background: rgba(124, 92, 255, 0.15); border: 1px solid var(--accent); color: #fff;">Cron-Job Observability Engine</span>
+          <h1 style="margin-top: 8px;">Monitor silent cron failures with clear, honest insights.</h1>
+          <p>See runtime performance timelines, capture stdout/stderr telemetry streams, and inspect AI-driven remedial audits dynamically.</p>
+        </div>
+      </div>
+    </header>
+
+    <!-- Top KPI Grid -->
+    <div class="top-kpi">
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <span>Monitored Jobs</span>
+          <span class="kpi-card-icon">&gt;_</span>
+        </div>
+        <strong id="kpi-jobs">0</strong>
+        <span class="desc">Active cron configurations</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <span>Total Executions</span>
+          <span class="kpi-card-icon">⚡</span>
+        </div>
+        <strong id="kpi-executions">0</strong>
+        <span class="desc">Chronological processes captured</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <span>Success Rate</span>
+          <span class="kpi-card-icon">🛡️</span>
+        </div>
+        <strong id="kpi-success">100%</strong>
+        <span class="desc">Zero exit code completion</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <span>Threshold Overruns</span>
+          <span class="kpi-card-icon">⚠️</span>
+        </div>
+        <strong id="kpi-overruns">0</strong>
+        <span class="desc">Duration &gt; 2x average baseline</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <span>Subprocess Failures</span>
+          <span class="kpi-card-icon">❌</span>
+        </div>
+        <strong id="kpi-failures">0</strong>
+        <span class="desc">Non-zero exit codes logged</span>
+      </div>
+    </div>
+
+    <!-- Main Grid: Timeline + configured cron schedules -->
+    <div class="main-grid">
+      <!-- Performance timeline -->
+      <section class="card">
+        <div class="card-header-row">
+          <h2>System-Wide Performance Timeline</h2>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:0.75rem;color:var(--muted)">Isolate:</span>
+            <select id="isolate-select" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#fff;padding:4px 8px;border-radius:6px;font-size:0.75rem;outline:none;">
+              <option value="all">System-Wide (All Logs)</option>
+            </select>
+          </div>
+        </div>
+        <div class="chart-placeholder">
+          <!-- Live SVG Timeline Line Chart -->
+          <svg class="chart-svg-container" id="timeline-svg" viewBox="0 0 600 240" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="line-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#7c5cff" stop-opacity="1" />
+                <stop offset="100%" stop-color="#3f76ff" stop-opacity="0.8" />
+              </linearGradient>
+            </defs>
+            <!-- Grid lines -->
+            <line x1="0" y1="40" x2="600" y2="40" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+            <line x1="0" y1="100" x2="600" y2="100" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+            <line x1="0" y1="160" x2="600" y2="160" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+            <!-- Path will be drawn dynamically by JS -->
+            <path id="timeline-path" d="" fill="none" stroke="url(#line-grad)" stroke-width="3.5" stroke-linecap="round"/>
+            <!-- Dots will be populated by JS -->
+            <g id="timeline-dots"></g>
+          </svg>
+          <div class="chart-legends">
+            <div class="legend-item"><span class="legend-dot" style="background:var(--success)"></span>Standard Execution</div>
+            <div class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>Anomaly Overrun</div>
+            <div class="legend-item"><span class="legend-dot" style="background:var(--danger)"></span>Subprocess Failure</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Configured Cron Schedules -->
+      <section class="card">
+        <div class="card-header-row">
+          <h2 id="schedules-title">CONFIGURED CRON SCHEDULES (0)</h2>
+          <button class="primary" id="open-register-btn">+ Register Job</button>
+        </div>
+        <div class="schedules-container" id="schedules-list">
+          <!-- Schedules populated dynamically -->
+        </div>
+      </section>
+    </div>
+
+    <!-- Chronological Logbook Registry Table -->
+    <section class="card logbook-section">
+      <div class="card-header-row">
+        <div>
+          <h2>CHRONOLOGICAL PROCESS LOGBOOK REGISTRY</h2>
+          <p style="margin:4px 0 0;font-size:0.8rem;color:var(--muted)">Telemetry streams sorted chronologically. Click on any record to inspect terminal console pipes and view AI SRE remedial instructions.</p>
+        </div>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Process Name</th>
+              <th>Monitored Command</th>
+              <th>Start ISO Timing</th>
+              <th>Monotonic Delta</th>
+              <th>Subprocess Returns</th>
+              <th>Status</th>
+              <th>Telemetry Audits</th>
+            </tr>
+          </thead>
+          <tbody id="logbook-tbody">
+            <!-- Table rows populated dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Sticky footer utility control bar -->
+  <div class="control-bar">
+    <div class="control-left" style="display: flex; align-items: center;">
+      <!-- CPU Icon -->
+      <div class="cpu-icon-container" style="width: 44px; height: 44px; background: #0f172a; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-right: 14px; flex-shrink: 0; box-shadow: 0 4px 12px rgba(15,23,42,0.15);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="4" width="16" height="16" rx="2"/>
+          <rect x="9" y="9" width="6" height="6"/>
+          <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/>
+        </svg>
+      </div>
+      <!-- Text & Buttons Column -->
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <strong style="font-size: 1.05rem; color: #0f172a; font-weight: 800; letter-spacing: -0.01em;">Cron-Job Observability Engine</strong>
+          <span class="badge" style="background: #ecfdf5; color: #059669; font-size: 0.68rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; border: 1px solid #10b981; line-height: 1;">SRE LIVE</span>
+        </div>
+        <div style="font-size: 0.76rem; color: #64748b; font-weight: 500;">
+          Subprocess Process-Harness Wrapper & Real-Time AI Remediation Diagnostics
+        </div>
+        <!-- SRE Buttons row -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: 3px;">
+          <button class="btn-control-sre" id="simulate-btn">Simulate Run</button>
+          <button class="btn-control-sre" id="toggle-tone">Switch Tone</button>
+          <button class="btn-control-sre" id="prune-btn">Prune Logs</button>
+        </div>
+      </div>
+    </div>
+    <div class="control-right" style="display:flex; align-items:center; gap:12px;">
+      <!-- UTC time container styled like button -->
+      <div class="btn-mockup btn-mockup-utc">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span id="live-time">--:--:-- UTC</span>
+      </div>
+      <!-- About GEN TECHIES -->
+      <a href="#" class="btn-mockup btn-mockup-about" id="btn-about-gentechies">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>About GEN TECHIES</span>
+      </a>
+      <!-- Interactive Tour -->
+      <a href="#" class="btn-mockup btn-mockup-tour" id="btn-interactive-tour">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span>Interactive Tour</span>
+      </a>
+      <!-- Help Guide -->
+      <a href="#" class="btn-mockup btn-mockup-help" id="btn-help-guide">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>Help Guide</span>
+      </a>
+      <!-- Reload -->
+      <button class="btn-mockup btn-mockup-reload" id="btn-reload" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal: About GEN TECHIES -->
+  <div class="modal-backdrop" id="about-backdrop">
+    <div class="modal" style="width: min(600px, 100%); border: 1px solid rgba(15, 138, 95, 0.3); box-shadow: 0 30px 80px rgba(15, 138, 95, 0.25);">
+      <h3 style="color: #0f8a5f; display: flex; align-items: center; gap: 8px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: #0f8a5f;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        About GEN TECHIES
+      </h3>
+      <p class="subtitle">Observability & SRE Automation Engineering Team</p>
+      
+      <div style="background: rgba(15, 138, 95, 0.03); padding: 14px 16px; border-radius: 12px; border: 1px solid rgba(15, 138, 95, 0.15); margin-bottom: 16px; font-size: 0.85rem; line-height: 1.5; color: var(--muted);">
+        We are <strong style="color: #fff;">GEN TECHIES</strong>, a team dedicated to building resilient systems, reliable automation, and advanced observability tools. This Cron-Job Observability Engine captures terminal stdout/stderr stream telemetry and runs SRE diagnostic engines to keep your cron tasks healthy.
+      </div>
+
+      <div class="gentechies-grid">
+        <div class="gentechies-card">
+          <div class="gentechies-avatar">KT</div>
+          <div class="gentechies-info">
+            <span class="gentechies-name">K THILAKHARIHARAN</span>
+            <span class="gentechies-role">CSE FINAL YEAR</span>
+          </div>
+        </div>
+        <div class="gentechies-card">
+          <div class="gentechies-avatar">SA</div>
+          <div class="gentechies-info">
+            <span class="gentechies-name">SHAIK AFREEN</span>
+            <span class="gentechies-role">CSE FINAL YEAR</span>
+          </div>
+        </div>
+        <div class="gentechies-card">
+          <div class="gentechies-avatar">RS</div>
+          <div class="gentechies-info">
+            <span class="gentechies-name">ROSHINI SRI S</span>
+            <span class="gentechies-role">CSE FINAL YEAR</span>
+          </div>
+        </div>
+        <div class="gentechies-card">
+          <div class="gentechies-avatar">GC</div>
+          <div class="gentechies-info">
+            <span class="gentechies-name">GOWDHAMA CHANDHRAN K</span>
+            <span class="gentechies-role">IT FINAL YEAR</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="margin-top: 20px;">
+        <button type="button" class="primary" id="close-about-btn" style="background: linear-gradient(135deg, #0f8a5f, #16a34a); box-shadow: 0 8px 20px rgba(15, 138, 95, 0.3); border: none;">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Help Guide -->
+  <div class="modal-backdrop" id="help-backdrop">
+    <div class="modal" style="width: min(640px, 100%);">
+      <h3>SRE Help Guide & Documentation</h3>
+      <p class="subtitle">Quick reference manual for the Cron-Job Observability Engine.</p>
+      
+      <div class="help-sections" style="display: flex; flex-direction: column; gap: 16px; max-height: 400px; overflow-y: auto; padding-right: 8px; font-size: 0.85rem; line-height: 1.6;">
+        <div style="background: rgba(255,255,255,0.02); padding: 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+          <strong style="color: #b59eff; display: block; margin-bottom: 6px;">1. System Onboarding & Tour</strong>
+          <p style="margin: 0; color: var(--muted);">If you are a new user, click the <strong>Interactive Tour</strong> button to start a guided walkthrough. It highlights key sections like KPIs, timeline graphs, registered schedules, and telemetry logs while dimming the background.</p>
+        </div>
+        
+        <div style="background: rgba(255,255,255,0.02); padding: 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+          <strong style="color: #3bd88d; display: block; margin-bottom: 6px;">2. Registering Cron Subprocesses</strong>
+          <p style="margin: 0; color: var(--muted);">Click <strong>+ Register Job</strong> in the configured schedules panel. Provide the job name, assigned operator, cron schedule expression (e.g. <code>*/10 * * * *</code>), and the exact CLI execution command. Job type and category are automatically defaulted to <code>'other'</code> behind the scenes to keep options simple.</p>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.02); padding: 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+          <strong style="color: #ff5b7f; display: block; margin-bottom: 6px;">3. Telemetry Stream Inspections</strong>
+          <p style="margin: 0; color: var(--muted);">When a subprocess executes (either scheduled, manually triggered, or simulated), the engine captures console stdout/stderr streams. Under the logbook table, click <strong>Inspect Logs</strong> or <strong>Inspect & AI Audit</strong> on any row to view full logs and AI-generated SRE diagnostics.</p>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.02); padding: 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+          <strong style="color: #f3b73b; display: block; margin-bottom: 6px;">4. Live SRE Controls</strong>
+          <p style="margin: 0; color: var(--muted);">Use the sticky utility control bar at the bottom to perform operations:
+            <ul style="margin: 6px 0 0 18px; padding: 0; color: var(--muted);">
+              <li><strong>Simulate Run</strong>: Generates random subprocess runs for test purposes.</li>
+              <li><strong>Switch Tone</strong>: Toggles automated SRE diagnostics between reassuring and cautious modes.</li>
+              <li><strong>Prune Logs</strong>: Purges execution history.</li>
+              <li><strong>Reload</strong>: Refreshes the dashboard data.</li>
+            </ul>
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="margin-top: 20px;">
+        <button type="button" class="primary" id="close-help-btn">Got it, thanks</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Register Job -->
+  <div class="modal-backdrop" id="register-backdrop">
+    <div class="modal">
+      <h3>Register Cron Subprocess</h3>
+      <p class="subtitle">Enter task configurations to bind the execution shell wrapper and analyze runtime telemetry stream metrics.</p>
+      <form id="register-form">
+        <div class="form-group">
+          <label>Job Name</label>
+          <input id="form-name" placeholder="e.g. daily-db-cleanup" required />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Assigned Operator</label>
+            <input id="form-assignee" placeholder="e.g. db_admin" />
+          </div>
+          <div class="form-group">
+            <label>Cron Schedule Expression</label>
+            <input id="form-schedule" placeholder="e.g. */10 * * * *" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Monitored Execution Command</label>
+          <input id="form-cmd" placeholder="e.g. python jobs/sample_job.py" required />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="secondary" id="close-register-btn">Cancel</button>
+          <button type="submit" class="primary">Register Job</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Audit details and logs -->
+  <div class="modal-backdrop" id="audit-backdrop">
+    <div class="modal" style="width: min(720px, 100%);">
+      <h3>Telemetry Audit & Remediations</h3>
+      <p class="subtitle" style="margin-bottom:14px;">Terminal stdout/stderr pipe logs and AI SRE diagnostic narration summary.</p>
+      
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div style="background:rgba(255,255,255,0.02);padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.05)">
+          <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;font-weight:700;">Start Timing</div>
+          <strong id="audit-timing" style="font-size:0.85rem;font-family:monospace;color:#fff;">--</strong>
+        </div>
+        <div style="background:rgba(255,255,255,0.02);padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.05)">
+          <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;font-weight:700;">Duration Delta</div>
+          <strong id="audit-duration" style="font-size:0.85rem;font-family:monospace;color:#fff;">--</strong>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Monitored command executed</label>
+        <div id="audit-cmd" style="padding:10px 14px;background:rgba(255,255,255,0.03);border-radius:10px;font-family:monospace;font-size:0.8rem;border:1px solid rgba(255,255,255,0.05);color:#fff;">--</div>
+      </div>
+
+      <div class="form-group">
+        <label>Console stdout pipe stream</label>
+        <textarea id="audit-stdout" rows="4" readonly style="resize:none;font-family:monospace;font-size:0.78rem;background:#050d1a;border-color:rgba(255,255,255,0.06);"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Console stderr pipe stream</label>
+        <textarea id="audit-stderr" rows="3" readonly style="resize:none;font-family:monospace;font-size:0.78rem;background:#1a050d;border-color:rgba(255,91,127,0.15);color:var(--danger);"></textarea>
+      </div>
+
+      <div class="form-group" style="background:rgba(124,92,255,0.05);padding:14px;border-radius:12px;border:1px solid rgba(124,92,255,0.15)">
+        <label style="color:#b59eff;">AI SRE Remedial Narration</label>
+        <p id="audit-narration" style="margin:6px 0 0;font-size:0.82rem;color:var(--text);"></p>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="secondary" id="close-audit-btn">Close Audit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tour Backdrop and Tooltip overlay elements -->
+  <div id="tour-backdrop"></div>
+  <div id="tour-tooltip">
+    <h4 id="tour-title">Step Title</h4>
+    <p id="tour-text">Step Explanation</p>
+    <div class="tour-tooltip-footer">
+      <button id="tour-skip" class="secondary" style="padding: 4px 10px; font-size: 0.75rem;">Skip Tour</button>
+      <button id="tour-next" class="primary" style="padding: 6px 14px; font-size: 0.8rem;">Next</button>
+    </div>
+  </div>
+
+  <script>
+    // Elements
+    const timelineSvg = document.getElementById('timeline-svg');
+    const timelinePath = document.getElementById('timeline-path');
+    const timelineDots = document.getElementById('timeline-dots');
+    const isolateSelect = document.getElementById('isolate-select');
+    
+    const schedulesList = document.getElementById('schedules-list');
+    const schedulesTitle = document.getElementById('schedules-title');
+    const logbookTbody = document.getElementById('logbook-tbody');
+    const liveTimeEl = document.getElementById('live-time');
+    
+    // Modals
+    const registerBackdrop = document.getElementById('register-backdrop');
+    const openRegisterBtn = document.getElementById('open-register-btn');
+    const closeRegisterBtn = document.getElementById('close-register-btn');
+    const registerForm = document.getElementById('register-form');
+    
+    const auditBackdrop = document.getElementById('audit-backdrop');
+    const closeAuditBtn = document.getElementById('close-audit-btn');
+
+    const aboutBackdrop = document.getElementById('about-backdrop');
+    const btnAboutGenTechies = document.getElementById('btn-about-gentechies');
+    const closeAboutBtn = document.getElementById('close-about-btn');
+    const btnReload = document.getElementById('btn-reload');
+    const helpBackdrop = document.getElementById('help-backdrop');
+    const btnHelpGuide = document.getElementById('btn-help-guide');
+    const closeHelpBtn = document.getElementById('close-help-btn');
+    
+    const simulateBtn = document.getElementById('simulate-btn');
+    const toggleTone = document.getElementById('toggle-tone');
+    const pruneBtn = document.getElementById('prune-btn');
+
+    let tone = 'reassuring';
+    let globalRecentRuns = [];
+
+    // Live clock
+    function updateClock() {
+      const now = new Date();
+      const dateStr = now.toISOString().replace('T', ' ').substring(0, 19);
+      liveTimeEl.textContent = dateStr + ' UTC';
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // Toggle register modal
+    openRegisterBtn.addEventListener('click', () => registerBackdrop.classList.add('active'));
+    closeRegisterBtn.addEventListener('click', () => registerBackdrop.classList.remove('active'));
+    registerBackdrop.addEventListener('click', (e) => {
+      if (e.target === registerBackdrop) registerBackdrop.classList.remove('active');
+    });
+
+    // Toggle audit modal
+    closeAuditBtn.addEventListener('click', () => auditBackdrop.classList.remove('active'));
+    auditBackdrop.addEventListener('click', (e) => {
+      if (e.target === auditBackdrop) auditBackdrop.classList.remove('active');
+    });
+
+    // Toggle about modal
+    btnAboutGenTechies.addEventListener('click', (e) => {
+      e.preventDefault();
+      aboutBackdrop.classList.add('active');
+    });
+    closeAboutBtn.addEventListener('click', () => aboutBackdrop.classList.remove('active'));
+    aboutBackdrop.addEventListener('click', (e) => {
+      if (e.target === aboutBackdrop) aboutBackdrop.classList.remove('active');
+    });
+
+    // Toggle help modal
+    btnHelpGuide.addEventListener('click', (e) => {
+      e.preventDefault();
+      helpBackdrop.classList.add('active');
+    });
+    closeHelpBtn.addEventListener('click', () => helpBackdrop.classList.remove('active'));
+    helpBackdrop.addEventListener('click', (e) => {
+      if (e.target === helpBackdrop) helpBackdrop.classList.remove('active');
+    });
+
+    // Reload button event handler
+    btnReload.addEventListener('click', () => {
+      const svg = btnReload.querySelector('svg');
+      svg.style.transform = 'rotate(360deg)';
+      svg.style.transition = 'transform 0.5s ease';
+      setTimeout(() => {
+        svg.style.transform = 'none';
+        svg.style.transition = 'none';
+      }, 500);
+      loadJobs();
+      loadDashboard();
+    });
+
+    // Load and render configured jobs
+    async function loadJobs() {
+      try {
+        const res = await fetch('/api/jobs');
+        const data = await res.json();
+        const jobs = data.jobs || [];
+        window.globalJobs = jobs;
+
+        schedulesTitle.textContent = `CONFIGURED CRON SCHEDULES (${jobs.length})`;
+        schedulesList.innerHTML = '';
+        
+        // Re-populate isolate filter options
+        const currentIsolateVal = isolateSelect.value;
+        isolateSelect.innerHTML = '<option value="all">System-Wide (All Logs)</option>';
+
+        jobs.forEach(job => {
+          // Add to schedules list
+          const card = document.createElement('div');
+          card.className = 'schedule-item';
+          
+          let statusClass = 'status-healthy';
+          if (job.status === 'Warning') statusClass = 'status-warning';
+          if (job.status === 'Critical') statusClass = 'status-critical';
+
+          card.innerHTML = `
+            <div class="schedule-details">
+              <span class="schedule-title">${job.name}</span>
+              <span class="schedule-info">${job.cmd || 'No command'}</span>
+              <div class="schedule-meta">
+                <span class="meta-tag">cron: ${job.schedule || '* * * * *'}</span>
+                <span class="meta-tag">operator: ${job.assignee || 'system'}</span>
+                <span class="meta-tag ${statusClass}">${job.status}</span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;">
+              <button class="execute-btn" data-id="${job.id}">Execute</button>
+              <button class="delete-btn" data-id="${job.id}">Delete</button>
+            </div>
+          `;
+          schedulesList.appendChild(card);
+
+          // Add to isolate dropdown
+          const opt = document.createElement('option');
+          opt.value = job.name;
+          opt.textContent = job.name;
+          isolateSelect.appendChild(opt);
+        });
+
+        isolateSelect.value = currentIsolateVal;
+
+        // Wire delete buttons
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const id = e.currentTarget.getAttribute('data-id');
+            if (confirm('De-register this job configuration?')) {
+              try {
+                const r = await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
+                if (r.ok) {
+                  loadJobs();
+                  loadDashboard();
+                }
+              } catch (err) {
+                console.error(err);
+              }
+            }
+          });
+        });
+
+        // Wire execute buttons
+        document.querySelectorAll('.execute-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const id = e.currentTarget.getAttribute('data-id');
+            const jobDone = prompt('Describe execution trigger purpose:', 'Manual verification run');
+            if (jobDone === null) return;
+            const person = prompt('Triggering SRE Operator name:', 'System Operator');
+            if (person === null) return;
+
+            try {
+              const r = await fetch(`/api/jobs/${id}/run`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ done: jobDone, person: person })
+              });
+              if (r.ok) {
+                loadJobs();
+                loadDashboard();
+              } else {
+                alert('Job wrapper execution returned a failure code.');
+              }
+            } catch (err) {
+              console.error(err);
+            }
+          });
+        });
+
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // Register job submit
+    registerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const job = {
+        name: document.getElementById('form-name').value.trim(),
+        type: 'other',
+        category: 'other',
+        assignee: document.getElementById('form-assignee').value.trim() || 'system',
+        schedule: document.getElementById('form-schedule').value.trim(),
+        cmd: document.getElementById('form-cmd').value.trim()
+      };
+      try {
+        const res = await fetch('/api/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(job)
+        });
+        if (res.ok) {
+          registerForm.reset();
+          registerBackdrop.classList.remove('active');
+          loadJobs();
+          loadDashboard();
+        } else {
+          const errData = await res.json();
+          alert('Configuration rejected: ' + (errData.description || 'failed to register'));
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    });
+
+    // Render SVG Timeline Line Chart
+    function renderTimeline(runs) {
+      // Clear previous nodes
+      timelineDots.innerHTML = '';
+      if (runs.length === 0) {
+        timelinePath.setAttribute('d', '');
+        return;
+      }
+
+      // Filter by isolate selection
+      const filterVal = isolateSelect.value;
+      const filteredRuns = filterVal === 'all' ? runs : runs.filter(r => r.job_name === filterVal);
+
+      if (filteredRuns.length === 0) {
+        timelinePath.setAttribute('d', '');
+        return;
+      }
+
+      // Display up to 15 runs chronologically (reverse sorted for graph)
+      const graphRuns = [...filteredRuns].slice(0, 15).reverse();
+      const paddingX = 40;
+      const paddingY = 30;
+      const width = 600;
+      const height = 240;
+      const usableWidth = width - (paddingX * 2);
+      const usableHeight = height - (paddingY * 2);
+
+      const maxDuration = Math.max(...graphRuns.map(r => r.duration_seconds), 1);
+      
+      let pathD = '';
+      
+      graphRuns.forEach((run, i) => {
+        const x = paddingX + (i * (usableWidth / Math.max(graphRuns.length - 1, 1)));
+        // Invert Y coordinates so higher duration is at the top
+        const y = (height - paddingY) - ((run.duration_seconds / maxDuration) * usableHeight);
+
+        if (i === 0) {
+          pathD = `M ${x} ${y}`;
+        } else {
+          pathD += ` L ${x} ${y}`;
+        }
+
+        // Draw dot node
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', x);
+        circle.setAttribute('cy', y);
+        circle.setAttribute('r', 5);
+
+        let dotColor = 'var(--success)';
+        if (run.status !== 'success') {
+          dotColor = run.anomaly_score >= 0.7 ? 'var(--danger)' : 'var(--warning)';
+        }
+        circle.setAttribute('fill', dotColor);
+        circle.setAttribute('stroke', '#0a1731');
+        circle.setAttribute('stroke-width', '2');
+        circle.style.cursor = 'pointer';
+
+        // Hover tooltip or event
+        circle.addEventListener('click', () => {
+          showAudit(run.id);
+        });
+
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = `${run.job_name}\nDuration: ${run.duration_seconds.toFixed(2)}s\nStatus: ${run.status}`;
+        circle.appendChild(title);
+        
+        timelineDots.appendChild(circle);
+      });
+
+      timelinePath.setAttribute('d', pathD);
+    }
+
+    // Refresh dynamic statistics and runs logbook
+    async function loadDashboard() {
+      try {
+        const res = await fetch('/dashboard');
+        const data = await res.json();
+        const summary = data.summary || {};
+        const recentRuns = data.recent_runs || [];
+        globalRecentRuns = recentRuns;
+
+        // Populate KPIs
+        document.getElementById('kpi-jobs').textContent = summary.total_jobs !== undefined ? summary.total_jobs : '0';
+        document.getElementById('kpi-executions').textContent = summary.total_runs !== undefined ? summary.total_runs : '0';
+        document.getElementById('kpi-success').textContent = (summary.success_rate !== undefined ? summary.success_rate : '100') + '%';
+        document.getElementById('kpi-overruns').textContent = summary.overruns !== undefined ? summary.overruns : '0';
+        document.getElementById('kpi-failures').textContent = summary.failed_runs !== undefined ? summary.failed_runs : '0';
+
+        // Render line chart
+        renderTimeline(recentRuns);
+
+        // Render logbook table
+        logbookTbody.innerHTML = '';
+        recentRuns.forEach(run => {
+          const tr = document.createElement('tr');
+          
+          let statusBadge = `<span class="status-badge clean">Clean</span>`;
+          if (run.status !== 'success') {
+            statusBadge = `<span class="status-badge failed">${run.anomaly_score >= 0.7 ? 'Failed Process' : 'Warning'}</span>`;
+          }
+
+          let auditBtnHtml = `<button class="audit-btn" onclick="showAudit(${run.id})">Inspect logs</button>`;
+          if (run.status !== 'success') {
+            auditBtnHtml = `<button class="audit-btn" style="background:rgba(255,91,127,0.1);color:var(--danger);border-color:rgba(255,91,127,0.25);" onclick="showAudit(${run.id})">Inspect logs</button>`;
+          }
+
+          const startLocalTime = new Date(run.started_at).toLocaleString();
+
+          tr.innerHTML = `
+            <td>Observability: ${run.job_name}</td>
+            <td style="color:#b59eff">${run.done || 'shell execution'}</td>
+            <td style="color:var(--muted)">${startLocalTime}</td>
+            <td style="color:#fff">${run.duration_seconds.toFixed(2)}s</td>
+            <td>exit ${run.exit_code}</td>
+            <td>${statusBadge}</td>
+            <td>${auditBtnHtml}</td>
+          `;
+          logbookTbody.appendChild(tr);
+        });
+
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // Inspect Logs Audit Details
+    async function showAudit(runId) {
+      try {
+        const res = await fetch(`/api/jobs/runs/${runId}`);
+        if (!res.ok) return;
+        const run = await res.json();
+        
+        document.getElementById('audit-timing').textContent = new Date(run.started_at).toLocaleString();
+        document.getElementById('audit-duration').textContent = `${run.duration_seconds.toFixed(3)} seconds`;
+        document.getElementById('audit-cmd').textContent = run.done || 'Shell subprocess invocation';
+        document.getElementById('audit-stdout').value = run.stdout || '(no output streams returned)';
+        document.getElementById('audit-stderr').value = run.stderr || '(no error streams returned)';
+        document.getElementById('audit-narration').textContent = run.narrative || 'No anomalies observed. Execution behaves clean.';
+        
+        auditBackdrop.classList.add('active');
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // Isolate filter change
+    isolateSelect.addEventListener('change', () => {
+      renderTimeline(globalRecentRuns);
+    });
+
+    // Simulate Run click
+    simulateBtn.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/jobs/simulate', { method: 'POST' });
+        if (res.ok) {
+          loadJobs();
+          loadDashboard();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    });
+
+    // Tone Switch click
+    toggleTone.addEventListener('click', () => {
+      tone = tone === 'reassuring' ? 'cautious' : 'reassuring';
+      if (tone === 'cautious') {
+        toggleTone.classList.add('cautious-active');
+      } else {
+        toggleTone.classList.remove('cautious-active');
+      }
+      
+      // Scroll to the Logbook Registry Table automatically to show changes
+      document.querySelector('.logbook-section').scrollIntoView({ behavior: 'smooth' });
+    });
+
+    // Prune Logs click
+    pruneBtn.addEventListener('click', async () => {
+      if (confirm('Purge all execution history and reset monitored telemetry streams?')) {
+        try {
+          const res = await fetch('/api/jobs/runs/prune', { method: 'POST' });
+          if (res.ok) {
+            loadJobs();
+            loadDashboard();
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    });
+
+    // Onboarding Tour logic
+    const tourBackdrop = document.getElementById('tour-backdrop');
+    const tourTooltip = document.getElementById('tour-tooltip');
+    const tourTitle = document.getElementById('tour-title');
+    const tourText = document.getElementById('tour-text');
+    const tourNext = document.getElementById('tour-next');
+    const tourSkip = document.getElementById('tour-skip');
+    const btnInteractiveTour = document.getElementById('btn-interactive-tour');
+
+    let tourCurrentStep = 0;
+    
+    const kpiCards = document.querySelectorAll('.top-kpi .kpi-card');
+    const timelineCard = document.querySelector('.main-grid .card:first-child');
+    const registerJobBtn = document.getElementById('open-register-btn');
+    const schedulesCard = document.querySelector('.main-grid .card:nth-child(2)');
+    const logbookCard = document.querySelector('.logbook-section');
+    const simulateBtnEl = document.getElementById('simulate-btn');
+    const toggleToneBtn = document.getElementById('toggle-tone');
+    const pruneBtnEl = document.getElementById('prune-btn');
+    const aboutBtn = document.getElementById('btn-about-gentechies');
+    const helpBtn = document.getElementById('btn-help-guide');
+    const reloadBtn = document.getElementById('btn-reload');
+    const controlBar = document.querySelector('.control-bar');
+
+    const tourSteps = [
+      {
+        element: kpiCards[0],
+        title: "KPI: Monitored Jobs",
+        text: "Displays the total count of registered cron subprocess configurations currently monitored by the system.",
+        align: "bottom"
+      },
+      {
+        element: kpiCards[1],
+        title: "KPI: Total Executions",
+        text: "Tracks the cumulative number of process execution runs captured, simulated, or executed by the observability engine.",
+        align: "bottom"
+      },
+      {
+        element: kpiCards[2],
+        title: "KPI: Success Rate",
+        text: "Shows the percentage of completed subprocess runs that finished with a healthy zero exit status code.",
+        align: "bottom"
+      },
+      {
+        element: kpiCards[3],
+        title: "KPI: Threshold Overruns",
+        text: "Highlights critical warnings where execution duration exceeded two times the average historic baseline.",
+        align: "bottom"
+      },
+      {
+        element: kpiCards[4],
+        title: "KPI: Subprocess Failures",
+        text: "Indicates the number of captured runs that crashed or exited with a non-zero status code.",
+        align: "bottom"
+      },
+      {
+        element: timelineCard,
+        title: "Performance Timeline Graph",
+        text: "This interactive SVG chart visualizes execution durations over time. Circular nodes are color-coded (Green=Success, Yellow=Warning, Red=Failure). Click any node to inspect console stdout/stderr streams.",
+        align: "right"
+      },
+      {
+        element: registerJobBtn,
+        title: "Register Cron Subprocess",
+        text: "Click this button to configure a new cron schedule, operator, and command wrapper to bind the execution telemetry pipes.",
+        align: "bottom"
+      },
+      {
+        element: schedulesCard,
+        title: "Configured Cron Schedules",
+        text: "Review active jobs, check their next run parameters, or trigger manual subprocess executions directly via the 'Execute' actions.",
+        align: "left"
+      },
+      {
+        element: logbookCard,
+        title: "Process Logbook Registry",
+        text: "All captured terminal executions are logged chronologically here. Select any record to load stdout/stderr streams and review automated AI SRE narrations.",
+        align: "top",
+        scroll: true
+      },
+      {
+        element: simulateBtnEl,
+        title: "Simulate Execution Run",
+        text: "Generates a randomized background cron run. Useful for testing duration thresholds, exit parameters, and checking SRE alert behaviors.",
+        align: "bottom"
+      },
+      {
+        element: toggleToneBtn,
+        title: "Switch AI Diagnostics Tone",
+        text: "Toggle the automated SRE analysis narrator between a reassuring mode and a detailed, cautious alerting mode.",
+        align: "bottom"
+      },
+      {
+        element: pruneBtnEl,
+        title: "Prune Telemetry Logs",
+        text: "Deletes all execution histories and resets job completion stat metrics back to their initial baseline.",
+        align: "bottom"
+      },
+      {
+        element: aboutBtn,
+        title: "About GEN TECHIES",
+        text: "Click here to see the SRE and observability engineering team credentials behind this harness engine.",
+        align: "bottom"
+      },
+      {
+        element: helpBtn,
+        title: "SRE Help Manual",
+        text: "Open the documentation overlay containing operating procedures, quickstart steps, FAQs, and terminal pipe mappings.",
+        align: "bottom"
+      },
+      {
+        element: reloadBtn,
+        title: "Reload Dashboard State",
+        text: "Triggers a spin transition and fetches clean, up-to-date stats directly from the active SQLite database configuration.",
+        align: "bottom"
+      },
+      {
+        element: controlBar,
+        title: "SRE Live Control Utility Panel",
+        text: "This light-themed bottom console gives you instant dashboard reload triggers, status indications, simulations, and help documentation.",
+        align: "bottom"
+      }
+    ];
+
+    function startTour() {
+      tourCurrentStep = 0;
+      tourBackdrop.classList.add('active');
+      tourTooltip.style.display = 'block';
+      showTourStep();
+    }
+
+    function endTour() {
+      tourBackdrop.classList.remove('active');
+      tourTooltip.style.display = 'none';
+      document.body.classList.remove('tour-active');
+      tourSteps.forEach(step => {
+        if (step.element) {
+          step.element.classList.remove('tour-highlight');
+          let parent = step.element.parentElement;
+          while (parent && parent !== document.body) {
+            parent.classList.remove('tour-highlight-parent');
+            parent = parent.parentElement;
+          }
+        }
+      });
+      localStorage.setItem('cj_obs_tour_completed', 'true');
+    }
+
+    function showTourStep() {
+      tourSteps.forEach(step => {
+        if (step.element) {
+          step.element.classList.remove('tour-highlight');
+          let parent = step.element.parentElement;
+          while (parent && parent !== document.body) {
+            parent.classList.remove('tour-highlight-parent');
+            parent = parent.parentElement;
+          }
+        }
+      });
+
+      if (tourCurrentStep >= tourSteps.length) {
+        endTour();
+        return;
+      }
+
+      const step = tourSteps[tourCurrentStep];
+      if (!step.element) {
+        tourCurrentStep++;
+        showTourStep();
+        return;
+      }
+
+      document.body.classList.add('tour-active');
+      step.element.classList.add('tour-highlight');
+      
+      let parent = step.element.parentElement;
+      while (parent && parent !== document.body) {
+        if (parent.classList.contains('main-grid') || parent.classList.contains('page') || parent.tagName === 'SECTION' || parent.classList.contains('top-kpi')) {
+          parent.classList.add('tour-highlight-parent');
+        }
+        parent = parent.parentElement;
+      }
+
+      tourTitle.textContent = step.title;
+      tourText.textContent = step.text;
+      
+      if (tourCurrentStep === tourSteps.length - 1) {
+        tourNext.textContent = 'Finish';
+      } else {
+        tourNext.textContent = 'Next';
+      }
+
+      // Snappy updates during animation frame
+      tourTooltip.classList.remove('no-transition');
+
+      if (step.scroll) {
+        step.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        let startTime = Date.now();
+        const updateDuringScroll = () => {
+          tourTooltip.classList.add('no-transition');
+          positionTooltip(step.element, step.align);
+          if (Date.now() - startTime < 1000) {
+            requestAnimationFrame(updateDuringScroll);
+          } else {
+            tourTooltip.classList.remove('no-transition');
+          }
+        };
+        requestAnimationFrame(updateDuringScroll);
+      } else {
+        step.element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        let startTime = Date.now();
+        const updateDuringScroll = () => {
+          tourTooltip.classList.add('no-transition');
+          positionTooltip(step.element, step.align);
+          if (Date.now() - startTime < 600) {
+            requestAnimationFrame(updateDuringScroll);
+          } else {
+            tourTooltip.classList.remove('no-transition');
+          }
+        };
+        requestAnimationFrame(updateDuringScroll);
+      }
+    }
+
+    function positionTooltip(element, alignment) {
+      const rect = element.getBoundingClientRect();
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+      
+      let top = 0;
+      let left = 0;
+      const tooltipWidth = 320;
+      tourTooltip.style.display = 'block';
+      const tooltipHeight = tourTooltip.offsetHeight || 160;
+
+      // Dynamically detect if the element or its parent is fixed
+      const computedPosition = window.getComputedStyle(element).position;
+      const controlBarEl = element.closest('.control-bar');
+      const isControlBarFixed = controlBarEl && window.getComputedStyle(controlBarEl).position === 'fixed';
+      const isFixed = computedPosition === 'fixed' || isControlBarFixed;
+
+      if (isFixed) {
+        tourTooltip.style.position = 'fixed';
+        if (alignment === 'bottom') {
+          top = rect.bottom + 16;
+          left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+        } else if (alignment === 'right') {
+          top = rect.top + (rect.height / 2) - (tooltipHeight / 2);
+          left = rect.right + 20;
+        } else if (alignment === 'left') {
+          top = rect.top + (rect.height / 2) - (tooltipHeight / 2);
+          left = rect.left - tooltipWidth - 20;
+        } else if (alignment === 'top') {
+          top = rect.top - tooltipHeight - 20;
+          left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+        }
+      } else {
+        tourTooltip.style.position = 'absolute';
+        if (alignment === 'bottom') {
+          top = rect.bottom + scrollTop + 16;
+          left = rect.left + scrollLeft + (rect.width / 2) - (tooltipWidth / 2);
+        } else if (alignment === 'right') {
+          top = rect.top + scrollTop + (rect.height / 2) - (tooltipHeight / 2);
+          left = rect.right + scrollLeft + 20;
+        } else if (alignment === 'left') {
+          top = rect.top + scrollTop + (rect.height / 2) - (tooltipHeight / 2);
+          left = rect.left + scrollLeft - tooltipWidth - 20;
+        } else if (alignment === 'top') {
+          top = rect.top + scrollTop - tooltipHeight - 20;
+          left = rect.left + scrollLeft + (rect.width / 2) - (tooltipWidth / 2);
+        }
+      }
+
+      if (left < 10) left = 10;
+      if (left + tooltipWidth > window.innerWidth) left = window.innerWidth - tooltipWidth - 10;
+      if (top < 10) top = 10;
+
+      tourTooltip.style.top = top + 'px';
+      tourTooltip.style.left = left + 'px';
+    }
+
+    function handleTourResizeScroll() {
+      if (tourBackdrop.classList.contains('active')) {
+        const step = tourSteps[tourCurrentStep];
+        if (step && step.element) {
+          tourTooltip.classList.add('no-transition');
+          positionTooltip(step.element, step.align);
+          clearTimeout(window.tourTransitionTimeout);
+          window.tourTransitionTimeout = setTimeout(() => {
+            tourTooltip.classList.remove('no-transition');
+          }, 100);
+        }
+      }
+    }
+    window.addEventListener('resize', handleTourResizeScroll);
+    window.addEventListener('scroll', handleTourResizeScroll);
+
+    tourNext.addEventListener('click', () => {
+      tourCurrentStep++;
+      showTourStep();
+    });
+
+    tourSkip.addEventListener('click', endTour);
+    btnInteractiveTour.addEventListener('click', (e) => {
+      e.preventDefault();
+      startTour();
+    });
+
+    window.addEventListener('load', () => {
+      if (!localStorage.getItem('cj_obs_tour_completed')) {
+        setTimeout(startTour, 1200);
+      }
+    });
+
+    // Load initial layout
+    loadJobs();
+    loadDashboard();
+  </script>
+</body>
+</html>
